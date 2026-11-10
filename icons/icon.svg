@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Eigenes Symbol "Notizen": gelbe Flaeche, Blatt mit Eselsohr, Zeilen und Haken -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd23f"/><stop offset="1" stop-color="#f2a900"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <path d="M150 112h160l72 72v206a22 22 0 0 1-22 22H150a22 22 0 0 1-22-22V134a22 22 0 0 1 22-22z" fill="#fffdf6"/>
+  <path d="M310 112v50a22 22 0 0 0 22 22h50z" fill="#f3dfa0"/>
+  <g stroke="#c9c2b0" stroke-width="14" stroke-linecap="round">
+    <path d="M178 238h156M178 290h156M232 342h102"/>
+  </g>
+  <path d="M174 340l18 18 30-34" fill="none" stroke="#e0a100" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

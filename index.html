@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="de-CH">
+<head>
+<meta charset="utf-8">
+<!-- interactive-widget=resizes-content: Tastatur verkleinert die Seite, damit die Formatleiste darueber bleibt -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' data: blob:; font-src 'self'; object-src 'none'; frame-src 'self' blob:; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'">
+<meta name="theme-color" content="#f7f6f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1c1e" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Notizen – schlichte Notizen-App mit Ordnern, Tabellen, Sprachmemos und PDF. Alles bleibt auf deinem Gerät.">
+<title>Notizen</title>
+<link rel="manifest" href="manifest.webmanifest?v=1">
+<link rel="icon" href="icons/icon.svg?v=1" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png?v=1">
+<link rel="stylesheet" href="styles.css?v=1">
+<script type="module" src="js/app.js?v=1"></script>
+</head>
+<body>
+<div id="app" data-view="folders">
+
+  <!-- 1) Ordner -->
+  <section id="pane-folders" class="pane" aria-label="Ordner">
+    <header class="bar">
+      <h1 class="big-title">Ordner</h1>
+      <button class="icon-btn" id="btn-settings" type="button" aria-label="Sicherung und Einstellungen" title="Sicherung und Einstellungen">
+        <svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
+      </button>
+    </header>
+    <div class="search-wrap"><input id="search-folders" class="search" type="search" placeholder="Suchen" aria-label="Alle Notizen durchsuchen" autocomplete="off"></div>
+    <div id="banner" class="banner" hidden></div>
+    <div class="scroll" id="folder-scroll">
+      <ul id="folder-list" class="list"></ul>
+      <ul id="search-results-folders" class="list results" hidden></ul>
+    </div>
+    <footer class="bottom">
+      <button class="text-btn" id="btn-new-folder" type="button">
+        <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/></svg>
+        Neuer Ordner</button>
+      <button class="icon-btn accent" id="btn-new-note-f" type="button" aria-label="Neue Notiz" title="Neue Notiz">
+        <svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>
+      </button>
+    </footer>
+  </section>
+
+  <!-- 2) Notizen -->
+  <section id="pane-notes" class="pane" aria-label="Notizen">
+    <header class="bar">
+      <button class="back" id="back-folders" type="button"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Ordner</button>
+      <span class="spacer"></span>
+      <button class="text-btn" id="btn-empty-trash" type="button" hidden>Alle löschen</button>
+    </header>
+    <h1 class="big-title" id="notes-title">Notizen</h1>
+    <div class="search-wrap"><input id="search-notes" class="search" type="search" placeholder="Suchen" aria-label="Alle Notizen durchsuchen" autocomplete="off"></div>
+    <div class="scroll">
+      <ul id="note-list" class="list notes"></ul>
+      <ul id="search-results-notes" class="list results" hidden></ul>
+      <p id="notes-empty" class="empty" hidden>Keine Notizen</p>
+    </div>
+    <footer class="bottom">
+      <span class="spacer"></span>
+      <span id="notes-count" class="muted"></span>
+      <span class="spacer"></span>
+      <button class="icon-btn accent" id="btn-new-note" type="button" aria-label="Neue Notiz" title="Neue Notiz">
+        <svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>
+      </button>
+    </footer>
+  </section>
+
+  <!-- 3) Editor -->
+  <section id="pane-editor" class="pane" aria-label="Notiz">
+    <header class="bar">
+      <button class="back" id="back-notes" type="button"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg><span id="back-notes-label">Notizen</span></button>
+      <span class="spacer"></span>
+      <span id="save-status" class="muted small" aria-live="polite"></span>
+      <button class="icon-btn" id="btn-share" type="button" aria-label="Teilen" title="Teilen">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M6 11H5v9h14v-9h-1"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-more" type="button" aria-label="Weitere Aktionen" title="Weitere Aktionen">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="8" cy="12" r=".6"/><circle cx="12" cy="12" r=".6"/><circle cx="16" cy="12" r=".6"/></svg>
+      </button>
+      <button class="text-btn strong" id="btn-done" type="button">Fertig</button>
+    </header>
+    <div id="trash-banner" class="banner" hidden>
+      Diese Notiz ist gelöscht.
+      <button class="text-btn" id="btn-restore" type="button">Wiederherstellen</button>
+    </div>
+    <div class="scroll editor-scroll" id="editor-scroll">
+      <div id="note-date" class="note-date"></div>
+      <div id="editor" class="editor" contenteditable="true" spellcheck="true" autocapitalize="sentences" role="textbox" aria-multiline="true" aria-label="Notiztext"></div>
+    </div>
+
+    <!-- Tabellen-Werkzeuge (nur sichtbar, wenn der Cursor in einer Tabelle steht) -->
+    <div id="table-tools" class="tools-row" hidden>
+      <button type="button" data-table="addRow">+ Zeile</button>
+      <button type="button" data-table="addCol">+ Spalte</button>
+      <button type="button" data-table="delRow">− Zeile</button>
+      <button type="button" data-table="delCol">− Spalte</button>
+      <button type="button" data-table="delTable" class="danger">Tabelle löschen</button>
+    </div>
+
+    <!-- Formatierungs-Panel (Aa) -->
+    <div id="format-panel" class="format-panel" hidden>
+      <div class="seg">
+        <button type="button" data-fmt="title">Titel</button>
+        <button type="button" data-fmt="heading">Überschrift</button>
+        <button type="button" data-fmt="subheading">Unterüberschrift</button>
+        <button type="button" data-fmt="body">Text</button>
+      </div>
+      <div class="seg">
+        <button type="button" data-fmt="bold" aria-label="Fett"><b>F</b></button>
+        <button type="button" data-fmt="italic" aria-label="Kursiv"><i>K</i></button>
+        <button type="button" data-fmt="underline" aria-label="Unterstrichen"><u>U</u></button>
+        <button type="button" data-fmt="strikeThrough" aria-label="Durchgestrichen"><s>D</s></button>
+      </div>
+      <div class="seg">
+        <button type="button" data-fmt="insertUnorderedList" aria-label="Aufzählung">• Liste</button>
+        <button type="button" data-fmt="insertOrderedList" aria-label="Nummerierte Liste">1. Liste</button>
+        <button type="button" data-fmt="checklist" aria-label="Checkliste">◯ Checkliste</button>
+      </div>
+      <div class="seg sizes">
+        <button type="button" data-size="13px">Klein</button>
+        <button type="button" data-size="normal">Normal</button>
+        <button type="button" data-size="22px">Gross</button>
+        <button type="button" data-size="30px">Sehr gross</button>
+      </div>
+      <div class="colors" id="colors"></div>
+    </div>
+
+    <!-- Untere Werkzeugleiste -->
+    <footer class="bottom editor-tools" id="editor-tools">
+      <button class="icon-btn" type="button" id="tb-format" aria-label="Formatieren" title="Formatieren"><span class="aa">Aa</span></button>
+      <button class="icon-btn" type="button" id="tb-check" aria-label="Checkliste" title="Checkliste">
+        <svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.5"/><path d="M11 7h9"/><circle cx="6" cy="17" r="2.5"/><path d="M11 17h9"/><path d="M4.8 7l.9.9 1.6-1.8"/></svg></button>
+      <button class="icon-btn" type="button" id="tb-table" aria-label="Tabelle einfügen" title="Tabelle einfügen">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 15h18M9 4v16M15 4v16"/></svg></button>
+      <button class="icon-btn" type="button" id="tb-photo" aria-label="Foto oder Kamera" title="Foto oder Kamera">
+        <svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+      <button class="icon-btn" type="button" id="tb-audio" aria-label="Sprachmemo aufnehmen" title="Sprachmemo aufnehmen">
+        <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
+      <button class="icon-btn" type="button" id="tb-file" aria-label="Datei einfügen" title="Datei einfügen">
+        <svg viewBox="0 0 24 24"><path d="M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9.7 17.2a1.6 1.6 0 0 1-2.3-2.3L15 7.4"/></svg></button>
+      <button class="icon-btn" type="button" id="tb-undo" aria-label="Rückgängig" title="Rückgängig">
+        <svg viewBox="0 0 24 24"><path d="M9 8H4V3"/><path d="M4.5 8.5A8 8 0 1 1 6 17"/></svg></button>
+    </footer>
+  </section>
+
+  <section id="pane-empty" class="pane empty-pane" aria-hidden="true"><p>Keine Notiz ausgewählt</p></section>
+</div>
+
+<input type="file" id="in-gallery" accept="image/*" multiple hidden>
+<input type="file" id="in-camera" accept="image/*" capture="environment" hidden>
+<input type="file" id="in-scan" accept="image/*" capture="environment" hidden>
+<input type="file" id="in-file" multiple hidden>
+<input type="file" id="in-restore" accept=".zip,application/zip" hidden>
+
+<div id="print-area" class="print-area editor"></div>
+<div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
