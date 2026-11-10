@@ -3,12 +3,20 @@
 
 const URL_RE = /https?:\/\/[^\s<>"']+/i;
 
+/** HEIC/HEIF (platzsparendes Kameraformat). Chrome kann es oft nicht anzeigen. */
+export function isHeic(name = '', type = '') {
+  return /^image\/hei[cf](-sequence)?$/i.test(type) || /\.(heic|heif)$/i.test(name);
+}
+
+export const HEIC_NOTE = 'HEIC-Bild: Vorschau nicht möglich';
+
 /** Ordnet eine Datei einer Art zu: image | pdf | text | csv | audio | video | other */
 export function classifyFile(name = '', type = '') {
   const n = name.toLowerCase(), t = type.toLowerCase();
   if (t === 'application/pdf' || n.endsWith('.pdf')) return 'pdf';
   if (/^image\/(jpeg|png|gif|webp|bmp|avif)$/.test(t) || /\.(jpe?g|png|gif|webp|bmp|avif)$/.test(n)) return 'image';
-  if (t.startsWith('image/') || /\.(heic|heif)$/.test(n)) return 'other';
+  if (isHeic(name, type)) return 'image'; // Samsung-Kamera; Lesen wird versucht, sonst Anhang (siehe importer.js)
+  if (t.startsWith('image/')) return 'other';
   if (t === 'text/csv' || /\.(csv|tsv)$/.test(n)) return 'csv';
   if (t.startsWith('text/') || /\.(txt|md|log|json|xml|ics|vcf)$/.test(n)) return 'text';
   if (t.startsWith('audio/') || /\.(mp3|m4a|ogg|opus|wav|webm|aac|amr)$/.test(n)) return 'audio';

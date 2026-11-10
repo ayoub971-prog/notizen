@@ -46,22 +46,55 @@ export function search(index, query, limit = 60) {
   return out.slice(0, limit);
 }
 
-/** Textausschnitt rund um den ersten Treffer (fuer die Ergebnisliste). */
-export function snippet(text, query, radius = 40) {
-  const words = normalize(query).trim().split(' ').filter(Boolean);
-  const src = String(text || '').replace(/\s+/g, ' ');
-  if (!words.length || !src) return src.slice(0, radius * 2);
-  // Normalisierung zeichenweise mit Positionszuordnung
+/** Normalisiert zeichenweise und merkt sich, welches Originalzeichen zu welcher
+ *  Stelle gehoert (ß -> ss macht den Text laenger, Akzente fallen weg). */
+function normWithMap(src) {
   let norm = '';
   const map = [];
   for (let i = 0; i < src.length; i++) {
     const n = normalize(src[i]);
     for (const ch of n) { norm += ch; map.push(i); }
   }
-  let pos = -1, len = 0;
-  for (const w of words) { const p = norm.indexOf(w); if (p >= 0 && (pos < 0 || p < pos)) { pos = p; len = w.length; } }
-  if (pos < 0) return src.slice(0, radius * 2);
-  const start = map[pos], end = map[Math.min(map.length - 1, pos + len - 1)] + 1;
-  const a = Math.max(0, start - radius), b = Math.min(src.length, end + radius);
-  return { before: (a > 0 ? '…' : '') + src.slice(a, start), match: src.slice(start, end), after: src.slice(end, b) + (b < src.length ? '…' : '') };
+  return { norm, map };
+}
+
+const queryWords = (q) => normalize(q).trim().split(' ').filter(Boolean);
+
+/**
+ * Alle Treffer der Suchwoerter in einem Text, als Positionen im ORIGINALtext:
+ * [{ start, end }] (end exklusiv), sortiert, ohne Ueberlappung.
+ * Beispiel: findMatches('Die Straße', 'strasse') -> [{ start: 4, end: 10 }]
+ */
+export function findMatches(text, query) {
+  const words = queryWords(query);
+  const src = String(text || '');
+  if (!words.length || !src) return [];
+  const { norm, map } = normWithMap(src);
+  const hits = [];
+  for (const w of words) {
+    let p = norm.indexOf(w);
+    while (p >= 0) {
+      let end = map[p + w.length - 1] + 1;
+      while (end < src.length && normalize(src[end]) === '') end++; // nachfolgende Akzentzeichen mitnehmen
+      hits.push({ start: map[p], end });
+      p = norm.indexOf(w, p + w.length);
+    }
+  }
+  hits.sort((a, b) => a.start - b.start || b.end - a.end);
+  const out = [];
+  for (const h of hits) {
+    const last = out[out.length - 1];
+    if (last && h.start < last.end) last.end = Math.max(last.end, h.end);
+    else out.push({ ...h });
+  }
+  return out;
+}
+
+/** Textausschnitt rund um den ersten Treffer (fuer die Ergebnisliste). */
+export function snippet(text, query, radius = 40) {
+  const src = String(text || '').replace(/\s+/g, ' ');
+  const m = findMatches(src, query)[0];
+  if (!m) return src.slice(0, radius * 2);
+  const a = Math.max(0, m.start - radius), b = Math.min(src.length, m.end + radius);
+  return { before: (a > 0 ? '…' : '') + src.slice(a, m.start), match: src.slice(m.start, m.end), after: src.slice(m.end, b) + (b < src.length ? '…' : '') };
 }

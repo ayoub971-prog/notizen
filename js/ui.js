@@ -17,9 +17,24 @@ export function el(tag, attrs = {}, ...kids) {
 }
 
 let toastTimer;
-export function toast(msg, ms = 2600) {
+/** Abstand des Hinweises vom unteren Rand: ueber allen sichtbaren Leisten am
+ *  unteren Rand (Werkzeugleiste, Tabellen-Werkzeuge, Format-Panel). Mit
+ *  interactive-widget=resizes-content liegt das automatisch ueber der Tastatur. */
+function toastBottom() {
+  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  let top = vh;
+  for (const e of document.querySelectorAll('.bottom, #table-tools, #format-panel')) {
+    if (!e.offsetParent && getComputedStyle(e).position !== 'fixed') continue; // unsichtbar
+    const r = e.getBoundingClientRect();
+    if (r.height && r.bottom > vh - 400 && r.top < top && r.bottom <= vh + 1) top = r.top;
+  }
+  return Math.max(16, vh - top + 10);
+}
+
+export function toast(msg, ms = 1800) {
   const t = $('#toast');
   t.textContent = msg;
+  t.style.setProperty('--toast-bottom', `${toastBottom()}px`);
   t.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.hidden = true; }, ms);

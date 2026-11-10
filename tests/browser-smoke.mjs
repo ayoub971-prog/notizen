@@ -76,10 +76,10 @@ async function main() {
   await waitFor('window.__notizen && document.querySelector("#folder-list li")', 8000);
 
   await step('Start: Ordnerliste mit Hauptordner, SW aktiv, Manifest erreichbar', async () => {
-    const r = await evaluate(`const m = await (await fetch('manifest.webmanifest?v=1')).json();
+    const r = await evaluate(`const m = await (await fetch('manifest.webmanifest?v=2')).json();
       return { rows: document.querySelectorAll('#folder-list li').length, name: m.name, share: m.share_target.action, sw: !!navigator.serviceWorker.controller,
         caches: await caches.keys() }`);
-    assert.equal(r.rows, 3); assert.equal(r.name, 'Notizen'); assert.equal(r.sw, true); assert.deepEqual(r.caches, ['notizen-v1']);
+    assert.equal(r.rows, 3); assert.equal(r.name, 'Notizen'); assert.equal(r.sw, true); assert.deepEqual(r.caches, ['notizen-v2']);
     await shot('01-ordner');
   });
 
@@ -328,6 +328,148 @@ async function main() {
     await shot('10b-geteilt-eingefuegt');
     await evaluate(`history.back()`); await sleep(300); await shot('10c-notizliste');
     assert.equal(await evaluate(`return location.search`), '');
+  });
+
+  // ================= Version 2 =================
+  await step('V2 Suche markiert Treffer in der Notiz (ß = ss, Akzente) – hell', async () => {
+    await evaluate(`__notizen.openFolder('f-default'); await __notizen.newNote();
+      const ed = document.querySelector('#editor'); ed.focus();
+      document.execCommand('insertText', false, 'Strassenliste'); document.execCommand('insertParagraph');
+      document.execCommand('insertText', false, 'Die Straße in Zürich ist lang.'); await __notizen.saveNow(); await __notizen.closeEditor();`);
+    const r = await evaluate(`const id = __notizen.S.notes.find(n => n.title === 'Strassenliste').id;
+      await __notizen.openNote(id, { highlight: 'strasse zurich' }); await new Promise(r => setTimeout(r, 300));
+      const h = CSS.highlights.get('treffer'); const texts = h ? [...h].map(r => r.toString()) : [];
+      let rule = false; for (const sh of document.styleSheets) for (const ru of sh.cssRules) { if ((ru.cssText || '').includes('::highlight(treffer)')) rule = true; if (ru.cssRules) for (const x of ru.cssRules) if ((x.cssText || '').includes('::highlight(treffer)')) rule = true; }
+      return { texts, rule }`);
+    assert.deepEqual(r.texts, ['Strasse', 'Straße', 'Zürich']); // «Strasse»nliste im Titel + Text
+    assert.equal(r.rule, true);
+    await shot('v2-01-treffer-hell');
+  });
+
+  await step('V2 Suchtreffer anklicken oeffnet Notiz mit Markierung', async () => {
+    await evaluate(`await __notizen.closeEditor(); history.back(); await new Promise(r => setTimeout(r, 300));
+      const i = document.querySelector('#search-notes'); i.value = 'zurich'; i.dispatchEvent(new Event('input'));`);
+    await waitFor('[...document.querySelectorAll("#search-results-notes li")].some(l => l.textContent.includes("Strassenliste"))');
+    await evaluate(`[...document.querySelectorAll('#search-results-notes li')].find(l => l.textContent.includes('Strassenliste')).querySelector('button,a,[role=button]')?.click() ?? [...document.querySelectorAll('#search-results-notes li')].find(l => l.textContent.includes('Strassenliste')).click()`);
+    await waitFor('document.querySelector("#app").dataset.view === "editor" && CSS.highlights.get("treffer")?.size > 0', 4000);
+    const t = await evaluate(`return [...CSS.highlights.get('treffer')].map(r => r.toString())`);
+    assert.deepEqual(t, ['Zürich']);
+    await evaluate(`const i = document.querySelector('#search-notes'); i.value = ''; i.dispatchEvent(new Event('input'));`);
+  });
+
+  await step('V2 HEIC-Foto aus Galerie: kein Absturz, Anhang mit Hinweis', async () => {
+    await evaluate(`const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array([0,0,0,24,102,116,121,112,104,101,105,99,0,0,0,0])], 'IMG_4711.HEIC', { type: 'image/heic' }));
+      const inp = document.querySelector('#in-gallery'); inp.files = dt.files; inp.dispatchEvent(new Event('change'));`);
+    await waitFor('[...document.querySelectorAll("#editor .att")].some(a => a.textContent.includes("IMG_4711"))', 5000);
+    const r = await evaluate(`const a = [...document.querySelectorAll('#editor .att')].find(a => a.textContent.includes('IMG_4711')); a.scrollIntoView();
+      await __notizen.saveNow(); const n = __notizen.S.notes.find(n => n.id === __notizen.S.noteId);
+      const f = [...__notizen.S.files.values()].find(f => f.name === 'IMG_4711.HEIC'); return { card: a.textContent, kind: f.kind, note: f.note, cards: document.querySelectorAll('#editor .att').length, inTitle: !!a.closest('h1'), title: n.title, firstIsTitle: document.querySelector('#editor').firstElementChild.tagName }`);
+    assert.equal(r.cards, 1); assert.equal(r.inTitle, false); assert.equal(r.title, 'Strassenliste'); assert.equal(r.firstIsTitle, 'H1');
+    assert.match(r.card, /HEIC-Bild: Vorschau nicht möglich/);
+    assert.equal(r.kind, 'image'); assert.equal(r.note, 'HEIC-Bild: Vorschau nicht möglich');
+    await shot('v2-02-heic');
+  });
+
+  await step('V2 Toast unten, ueber der Werkzeugleiste, kurz sichtbar', async () => {
+    const r = await evaluate(`const ui = await import('./js/ui.js'); ui.toast('Test-Meldung');
+      await new Promise(r => setTimeout(r, 50));
+      const t = document.querySelector('#toast').getBoundingClientRect();
+      const bars = [...document.querySelectorAll('.bottom, #editor-tools, #table-tools')].filter(e => e.offsetParent && !e.hidden).map(e => e.getBoundingClientRect().top);
+      const title = document.querySelector('#editor h1').getBoundingClientRect();
+      return { top: t.top, bottom: t.bottom, barTop: Math.min(...bars), titleBottom: title.bottom, h: innerHeight }`);
+    assert.ok(r.bottom <= r.barTop + 1, 'Toast ueber Werkzeugleiste: ' + JSON.stringify(r));
+    assert.ok(r.top > r.h / 2, 'Toast im unteren Bereich: ' + JSON.stringify(r));
+    const lines = await evaluate(`const ui = await import('./js/ui.js'); ui.toast('Sicherung wird erstellt …'); const t = document.querySelector('#toast'); return t.getBoundingClientRect().height`);
+    assert.ok(lines < 50, 'Hoehe ' + lines + 'px: ' + 'kurze Meldung bricht nicht unnoetig um');
+    await shot('v2-03-toast');
+    await sleep(2100);
+    assert.equal(await evaluate(`return document.querySelector('#toast').hidden`), true);
+  });
+
+  await step('V2 Rueckgaengig: Checklisten-Haken', async () => {
+    const r = await evaluate(`await __notizen.newNote(); const ed = document.querySelector('#editor'); ed.focus();
+      document.execCommand('insertText', false, 'Undo-Test'); document.execCommand('insertParagraph');
+      document.querySelector('#tb-check').click(); document.execCommand('insertText', false, 'Milch');
+      const li = ed.querySelector('ul.checklist li'); const rc = li.getBoundingClientRect();
+      li.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: rc.left + 10, clientY: rc.top + 8 }));
+      const ticked = ed.querySelector('ul.checklist li').dataset.checked;
+      document.querySelector('#tb-undo').click();
+      const after = ed.querySelector('ul.checklist li')?.dataset.checked ?? null;
+      const text = ed.querySelector('ul.checklist li')?.textContent;
+      return { ticked, after, text }`);
+    assert.deepEqual(r, { ticked: 'true', after: null, text: 'Milch' });
+  });
+
+  await step('V2 Rueckgaengig: Zeile/Spalte hinzufuegen und loeschen in Tabelle', async () => {
+    const r = await evaluate(`const ed = document.querySelector('#editor');
+      const r0 = document.createRange(); r0.selectNodeContents(ed); r0.collapse(false); getSelection().removeAllRanges(); getSelection().addRange(r0);
+      document.execCommand('insertParagraph'); document.querySelector('#tb-table').click(); document.execCommand('insertText', false, 'Kopf');
+      const t = () => ed.querySelector('table'); const dims = () => [t().rows.length, t().rows[0].cells.length];
+      const at = (i) => { const c = t().querySelectorAll('th,td')[i]; const r = document.createRange(); r.selectNodeContents(c); r.collapse(false); getSelection().removeAllRanges(); getSelection().addRange(r); };
+      const out = { start: dims() };
+      at(4); document.querySelector('[data-table="addRow"]').click(); out.addRow = dims();
+      document.querySelector('#tb-undo').click(); out.undoRow = dims();
+      at(4); document.querySelector('[data-table="addCol"]').click(); out.addCol = dims();
+      document.querySelector('#tb-undo').click(); out.undoCol = dims();
+      at(4); document.querySelector('[data-table="delRow"]').click(); out.delRow = dims();
+      document.querySelector('#tb-undo').click(); out.undoDel = dims();
+      out.head = t().querySelector('th').textContent;
+      return out`);
+    assert.deepEqual(r, { start: [3, 3], addRow: [4, 3], undoRow: [3, 3], addCol: [3, 4], undoCol: [3, 3], delRow: [2, 3], undoDel: [3, 3], head: 'Kopf' });
+  });
+
+  await step('V2 Rueckgaengig: Anhang entfernen', async () => {
+    await evaluate(`const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array(20)], 'Beleg.heif', { type: 'image/heif' }));
+      const inp = document.querySelector('#in-gallery'); inp.files = dt.files; inp.dispatchEvent(new Event('change'));`);
+    await waitFor('[...document.querySelectorAll("#editor .att")].some(a => a.textContent.includes("Beleg.heif"))', 5000);
+    await evaluate(`const a = [...document.querySelectorAll('#editor .att')].find(a => a.textContent.includes('Beleg.heif')); [...a.querySelectorAll('button')].find(b => b.textContent === 'Entfernen').click();`);
+    await waitFor('document.querySelector("dialog[open]")');
+    await evaluate(`document.querySelector('dialog[open] .btn.primary, dialog[open] .btn.danger').click()`);
+    await waitFor('![...document.querySelectorAll("#editor .att")].some(a => a.textContent.includes("Beleg.heif"))', 3000);
+    await evaluate(`document.querySelector('#tb-undo').click()`);
+    await waitFor('[...document.querySelectorAll("#editor .att")].some(a => a.textContent.includes("Beleg.heif") && a.textContent.includes("Herunterladen"))', 3000);
+  });
+
+  for (const w of [412, 360]) {
+    await step(`V2 Tabellen-Werkzeuge passen bei ${w}px (kein abgeschnittener Knopf)`, async () => {
+      await send('Emulation.setDeviceMetricsOverride', { width: w, height: 800, deviceScaleFactor: 2, mobile: true });
+      await sleep(250);
+      await evaluate(`const c = document.querySelector('#editor table td'); const r = document.createRange(); r.selectNodeContents(c); r.collapse(false); getSelection().removeAllRanges(); getSelection().addRange(r); document.querySelector('#editor').focus();`);
+      await waitFor('!document.querySelector("#table-tools").hidden', 3000);
+      const r = await evaluate(`const bar = document.querySelector('#table-tools'); const b = bar.getBoundingClientRect();
+        const btns = [...bar.querySelectorAll('button')].map(x => { const q = x.getBoundingClientRect(); return { t: x.textContent.trim(), clipped: x.scrollWidth > x.clientWidth + 1, out: q.left < b.left - 1 || q.right > b.right + 1 || q.right > innerWidth }; });
+        return { overflow: bar.scrollWidth > bar.clientWidth + 1, bad: btns.filter(x => x.clipped || x.out), labels: btns.map(x => x.t) }`);
+      assert.equal(r.overflow, false); assert.deepEqual(r.bad, []);
+      assert.ok(r.labels.includes('Tabelle löschen'), JSON.stringify(r.labels));
+      await shot(`v2-04-tabelle-${w}`);
+    });
+  }
+
+  await step('V2 Sicherung, extern mit Deflate neu gepackt, wird in Chrome eingelesen', async () => {
+    await send('Emulation.setDeviceMetricsOverride', { width: 412, height: 915, deviceScaleFactor: 2, mobile: true });
+    await evaluate(`await __notizen.saveNow()`);
+    const b64 = await evaluate(`const f = await __notizen.makeZip(); const b = new Uint8Array(await f.arrayBuffer()); let s = ''; for (const x of b) s += String.fromCharCode(x); return btoa(s)`);
+    const src = '/tmp/notizen-shots/v2-store.zip', dst = '/tmp/notizen-shots/v2-deflate.zip';
+    fs.writeFileSync(src, Buffer.from(b64, 'base64'));
+    execFileSync('python3', ['-c', `import zipfile,sys
+s=zipfile.ZipFile(sys.argv[1]); d=zipfile.ZipFile(sys.argv[2],'w',zipfile.ZIP_DEFLATED)
+for i in s.infolist(): d.writestr(i.filename, s.read(i.filename))
+d.close()`, src, dst]);
+    const d64 = fs.readFileSync(dst).toString('base64');
+    const r = await evaluate(`const bin = atob('${d64}'); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      const data = await __notizen.backup.readBackupZip(new Blob([u]));
+      return { notes: data.notes.map(n => n.title).sort(), heic: data.files.some(f => f.name === 'IMG_4711.HEIC' && f.blob.size === 16) }`);
+    assert.ok(r.notes.includes('Strassenliste') && r.notes.includes('Undo-Test'), JSON.stringify(r));
+    assert.equal(r.heic, true);
+  });
+
+  await step('V2 Dunkelmodus: Treffer-Markierung', async () => {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
+    await evaluate(`const id = __notizen.S.notes.find(n => n.title === 'Strassenliste').id; await __notizen.openNote(id, { highlight: 'strasse zurich' }); await new Promise(r => setTimeout(r, 300));`);
+    assert.equal(await evaluate(`return CSS.highlights.get('treffer').size`), 3);
+    assert.equal(await evaluate(`return document.querySelector('#table-tools').hidden`), true, 'Tabellen-Leiste der vorherigen Notiz ausgeblendet');
+    await shot('v2-05-treffer-dunkel');
+    await send('Emulation.setEmulatedMedia', { features: [] });
   });
 
   await step('Breite Ansicht (Tablet/Desktop): drei Spalten', async () => {

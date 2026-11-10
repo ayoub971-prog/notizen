@@ -130,12 +130,18 @@ svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width:
 /* Format-Panel und Tabellen-Werkzeuge */
 .format-panel { background: var(--paper); border-top: 1px solid var(--line); padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; max-height: 45vh; overflow-y: auto; }
 .seg { display: flex; gap: 6px; overflow-x: auto; }
-.seg button, .tools-row button { flex: 1 0 auto; min-height: 42px; padding: 0 12px; border-radius: 10px; background: rgba(127,127,127,.12); font-size: 15px; white-space: nowrap; }
+.seg button, .tools-row button { flex: 1 0 auto; overflow: hidden; text-overflow: ellipsis; min-height: 42px; padding: 0 12px; border-radius: 10px; background: rgba(127,127,127,.12); font-size: 15px; white-space: nowrap; }
 .seg button[data-fmt="title"] { font-weight: 700; } .seg button[data-fmt="heading"] { font-weight: 600; }
 .seg button.on { background: var(--accent); color: #000; }
 .colors { display: flex; gap: 10px; flex-wrap: wrap; padding: 2px 2px 4px; }
 .colors button { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--line); }
-.tools-row { display: flex; gap: 6px; padding: 6px 10px; overflow-x: auto; background: var(--paper); border-top: 1px solid var(--line); }
+.tools-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; background: var(--paper); border-top: 1px solid var(--line); }
+.tools-row button { flex: 1 1 auto; padding: 0 8px; min-width: 0; }
+/* Schmale Handys: 4 Knoepfe pro Zeile, «Tabelle löschen» darunter ueber die ganze Breite – nichts wird abgeschnitten */
+@media (max-width: 599px) {
+  .tools-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .tools-row .danger { grid-column: 1 / -1; }
+}
 .tools-row .danger { color: var(--danger); }
 
 /* Dialoge */
@@ -165,7 +171,9 @@ svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width:
 .rec-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--danger); display: inline-block; margin-right: 8px; animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: .2; } }
 
-.toast { position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); background: rgba(30,30,30,.92); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 15px; max-width: 90vw; z-index: 50; box-shadow: var(--shadow); }
+/* Hinweis unten, ueber der Werkzeugleiste (Abstand setzt ui.js je nach sichtbaren Leisten/Tastatur) */
+.toast { position: fixed; left: 50%; bottom: var(--toast-bottom, calc(72px + env(safe-area-inset-bottom))); transform: translateX(-50%); background: rgba(30,30,30,.92); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 15px; width: max-content; max-width: calc(100vw - 32px); text-align: center; z-index: 50; box-shadow: var(--shadow); }
+@media (prefers-color-scheme: dark) { .toast { background: rgba(72,72,74,.96); } }
 .print-area { display: none; }
 
 /* Drucken / Als PDF speichern: nur die Notiz */
@@ -178,3 +186,7 @@ svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width:
   .print-area .att { border: 1px solid #ccc; }
   html, body { background: #fff; }
 }
+
+/* Suchtreffer in der geoeffneten Notiz (CSS Custom Highlight API) */
+::highlight(treffer) { background-color: #ffd84d; color: #1c1c1e; }
+@media (prefers-color-scheme: dark) { ::highlight(treffer) { background-color: #8a6d00; color: #ffffff; } }

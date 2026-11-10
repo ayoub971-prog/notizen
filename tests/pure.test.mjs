@@ -10,11 +10,11 @@ import { parseHtml, serialize } from '../js/htmlparse.js';
 import { htmlToBlocks, blocksToText } from '../js/blocks.js';
 import { createPdf, toWinAnsi, jpegInfo, textToBlocks } from '../js/pdf.js';
 import { makeZip, readZip, crc32 } from '../js/zip.js';
-import { buildIndex, search, normalize, snippet } from '../js/search.js';
+import { buildIndex, search, normalize, snippet, findMatches } from '../js/search.js';
 import { flattenTree, pathOf, descendantIds, canMoveFolder, moveFolder, planDeleteFolder, validateFolderName } from '../js/tree.js';
-import { parseShared, classifyFile, describeItems, parseCsv, pdfConvertible } from '../js/sharetarget.js';
+import { parseShared, classifyFile, describeItems, parseCsv, pdfConvertible, isHeic } from '../js/sharetarget.js';
 import { safeFileName, assignFileNames, assignAttachmentNames, linkAttachments, standaloneHtml } from '../js/exportfmt.js';
-import { planLayout, noteOutputs, TRASH_DIR } from '../js/backup.js';
+import { planLayout, noteOutputs, TRASH_DIR, readBackupZip } from '../js/backup.js';
 import { mergeTextForPdf } from '../js/importer.js';
 
 const has = (cmd) => { try { execFileSync('which', [cmd], { stdio: 'ignore' }); return true; } catch { return false; } };
@@ -150,7 +150,7 @@ test('PDF aus reinem Text mit langen Woertern', () => {
 });
 
 // ---------- ZIP ----------
-test('ZIP: CRC32, Rundlauf und Pruefung mit unzip/python', () => {
+test('ZIP: CRC32, Rundlauf und Pruefung mit unzip/python', async () => {
   assert.equal(crc32(new TextEncoder().encode('123456789')), 0xcbf43926);
   const entries = [
     { name: 'Notizen/Einkauf/Bestellung Müller.txt', data: 'Grüezi\nÄpfel 12' },
@@ -158,7 +158,7 @@ test('ZIP: CRC32, Rundlauf und Pruefung mit unzip/python', () => {
     { name: 'LIESMICH.txt', data: '' },
   ];
   const zip = makeZip(entries);
-  const back = readZip(zip);
+  const back = await readZip(zip);
   assert.equal(back.length, 3);
   assert.equal(new TextDecoder().decode(back[0].data), 'Grüezi\nÄpfel 12');
   assert.deepEqual([...back[1].data], [0, 1, 2, 255]);
@@ -173,7 +173,7 @@ test('ZIP: CRC32, Rundlauf und Pruefung mit unzip/python', () => {
     const py = `import zipfile,sys;z=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None;print(z.read('Notizen/Einkauf/Bestellung Müller.txt').decode())`;
     assert.match(execFileSync('python3', ['-c', py, file]).toString(), /Äpfel 12/);
   }
-  assert.throws(() => readZip(new Uint8Array(10)), /Keine gueltige ZIP/);
+  await assert.rejects(readZip(new Uint8Array(10)), /Keine gueltige ZIP/);
 });
 
 // ---------- Suche ----------
@@ -285,4 +285,82 @@ test('PDF-Modus: geteilter Text + Link werden zu einem PDF zusammengefasst', () 
   assert.deepEqual(merged.map((i) => i.kind), ['text', 'file']);
   assert.equal(merged[0].text, 'Schau mal\n\nhttps://www.srf.ch/news');
   assert.equal(mergeTextForPdf(parseShared({ html: '<p>x</p>', url: 'https://a.ch' })).length, 2);
+});
+
+// ================= Version 2 =================
+test('V2 Suche: Treffer-Positionen im Originaltext (ß/ss, Akzente, Gross/klein)', () => {
+  assert.deepEqual(findMatches('Die Straße in Zürich, STRASSE', 'strasse zurich'), [{ start: 4, end: 10 }, { start: 14, end: 20 }, { start: 22, end: 29 }]);
+  const t = 'Die Straße in Zürich';
+  const [m] = findMatches(t, 'STRASSE');
+  assert.equal(t.slice(m.start, m.end), 'Straße');
+  // zerlegtes ü (u + Akzentzeichen) wird ganz markiert
+  const d = 'Mu\u0308ller';
+  const [m2] = findMatches(d, 'mul');
+  assert.equal(d.slice(m2.start, m2.end), 'Mu\u0308l');
+  // ein "s" in "ß" markiert das ganze ß, Ueberlappungen werden zusammengefasst
+  assert.deepEqual(findMatches('aßb', 's'), [{ start: 1, end: 2 }]);
+  assert.deepEqual(findMatches('Strasse', 'stras asse'), [{ start: 0, end: 7 }]);
+  assert.deepEqual(findMatches('abc', ''), []);
+});
+
+test('V2 HEIC/HEIF gilt als Bild', () => {
+  assert.equal(classifyFile('IMG_0001.heic', 'image/heic'), 'image');
+  assert.equal(classifyFile('IMG_0002.HEIF', ''), 'image');
+  assert.equal(classifyFile('x', 'image/heif-sequence'), 'image');
+  assert.equal(isHeic('a.jpg', 'image/jpeg'), false);
+  assert.equal(classifyFile('scan.tiff', 'image/tiff'), 'other');
+});
+
+test('V2 createPdf veraendert die Eingabe nicht', () => {
+  const blocks = htmlToBlocks('<p>Hallo</p><div class="att" data-att="a-1-abcd"></div><img src="data:image/png;base64,AAAA"><table><tr><th>A</th></tr></table>');
+  const before = JSON.stringify(blocks);
+  assert.deepEqual(blocks.map((b) => b.type), ['p', 'att', 'img', 'table']);
+  const pdf1 = createPdf({ title: 'T', blocks, attName: () => 'X.pdf', date: new Date(0) });
+  assert.equal(JSON.stringify(blocks), before);
+  const pdf2 = createPdf({ title: 'T', blocks, attName: () => 'X.pdf', date: new Date(0) });
+  assert.deepEqual(pdf1, pdf2); // zweiter Export identisch
+  const raw = Buffer.from(pdf2).toString('latin1');
+  assert.ok(raw.includes('(Anhang:) Tj') && raw.includes('(X.pdf) Tj') && raw.includes('([Bild]) Tj'));
+});
+
+const pyDeflate = (src, dst) => execFileSync('python3', ['-c',
+  `import zipfile,sys
+s=zipfile.ZipFile(sys.argv[1]); d=zipfile.ZipFile(sys.argv[2],'w',zipfile.ZIP_DEFLATED)
+for i in s.infolist(): d.writestr(i.filename, s.read(i.filename))
+d.close(); print(zipfile.ZipFile(sys.argv[2]).infolist()[0].compress_type)`, src, dst]).toString().trim();
+
+test('V2 ZIP: Deflate (mit Python neu gepackt) wird gelesen, andere Methoden klar abgelehnt', { skip: !has('python3') }, async () => {
+  const text = 'Grüezi Äpfel '.repeat(500);
+  const src = path.join(tmp, 'store.zip'), dst = path.join(tmp, 'deflate.zip');
+  fs.writeFileSync(src, makeZip([{ name: 'Ordner/Notiz Müller.txt', data: text }, { name: 'bin.dat', data: new Uint8Array(3000).map((_, i) => i % 7) }]));
+  assert.equal(pyDeflate(src, dst), '8');
+  const bytes = new Uint8Array(fs.readFileSync(dst));
+  assert.ok(bytes.length < fs.statSync(src).size, 'wirklich komprimiert');
+  const files = await readZip(bytes);
+  assert.equal(new TextDecoder().decode(files.find((f) => f.name === 'Ordner/Notiz Müller.txt').data), text);
+  assert.equal(files.find((f) => f.name === 'bin.dat').data[13], 13 % 7);
+  // Methode 12 (bzip2) vortaeuschen -> verstaendliche Meldung
+  const bad = new Uint8Array(fs.readFileSync(src));
+  const v = new DataView(bad.buffer);
+  for (let i = 0; i < bad.length - 4; i++) if (v.getUint32(i, true) === 0x02014b50) v.setUint16(i + 10, 12, true);
+  await assert.rejects(readZip(bad), /nicht unterstützten Verfahren gepackt \(Methode 12\)/);
+});
+
+test('V2 Notizen-Sicherung, die mit Deflate neu gepackt wurde, laesst sich wiederherstellen', { skip: !has('python3') }, async () => {
+  const backup = { app: 'Notizen', format: 1, folders: [{ id: 'f-default', name: 'Notizen', parentId: null }],
+    notes: [{ id: 'n1', folderId: 'f-default', title: 'Test', html: '<p>Test</p><div class="att" data-att="a-1-abcd"></div>' }],
+    files: [{ id: 'a-1-abcd', noteId: 'n1', name: 'r.pdf', type: 'application/pdf', kind: 'pdf', zipPath: 'Notizen/Notizen/Test – Anhänge/r.pdf' }] };
+  const src = path.join(tmp, 'b-store.zip'), dst = path.join(tmp, 'b-deflate.zip');
+  fs.writeFileSync(src, makeZip([{ name: 'Notizen/Notizen/Test – Anhänge/r.pdf', data: '%PDF-1.4 test' }, { name: '_wiederherstellung/backup.json', data: JSON.stringify(backup) }]));
+  pyDeflate(src, dst);
+  const data = await readBackupZip(new Blob([fs.readFileSync(dst)]));
+  assert.equal(data.notes[0].title, 'Test');
+  assert.equal(await data.files[0].blob.text(), '%PDF-1.4 test');
+  await assert.rejects(readBackupZip(new Blob([makeZip([{ name: 'x.txt', data: 'x' }])])), /keine Notizen-Sicherung/);
+});
+
+test('V2 Sicherung enthaelt nur noch verwendete Anhaenge', () => {
+  const plan = planLayout([{ id: 'f', name: 'A', parentId: null }], [{ id: 'n', folderId: 'f', title: 'N', html: '<div class="att" data-att="a-keep"></div>', created: 1 }],
+    [{ id: 'a-keep', noteId: 'n', name: 'k.pdf' }, { id: 'a-weg', noteId: 'n', name: 'weg.pdf' }]);
+  assert.deepEqual(plan.get('n').files.map((f) => f.id), ['a-keep']);
 });

@@ -30,7 +30,7 @@ test('Service Worker cached alle Dateien, Cache-Name versioniert', () => {
 test('index.html: CSP, Manifest, versionierte Skripte', () => {
   const html = read('index.html');
   assert.match(html, /Content-Security-Policy" content="default-src 'self'; script-src 'self';/);
-  assert.match(html, /js\/app\.js\?v=1/);
+  assert.match(html, /js\/app\.js\?v=2/);
   assert.match(html, /lang="de-CH"/);
   assert.doesNotMatch(html, /<script(?![^>]*type="module" src=)/); // keine Inline-Skripte
 });
@@ -47,7 +47,7 @@ test('Manifest: installierbar + Teilen-Ziel mit Dateien', () => {
 
 test('Schweizer Schreibweise in der Oberflaeche (kein ß)', () => {
   for (const f of ['index.html', 'js/app.js', 'js/importer.js', 'js/share.js', 'js/backup.js', 'js/ui.js']) {
-    const lines = read(f).split('\n').filter((l) => l.includes('ß') && !/normalize|\/\/|'ß'|ß\/g/.test(l));
+    const lines = read(f).split('\n').filter((l) => l.includes('ß') && !/normalize|\/\/|^\s*\*|'ß'|ß\/g/.test(l));
     assert.deepEqual(lines, [], f);
   }
 });

@@ -212,7 +212,9 @@ function tableLayout(block, wr) {
  */
 export function createPdf({ title = 'Notiz', blocks = [], attName = () => 'Anhang', date = new Date() }) {
   const wr = new Writer();
-  for (const b of blocks) {
+  // Wichtig: die uebergebenen Bloecke werden NICHT veraendert (nur lokale Kopien).
+  for (const original of blocks) {
+    let b = original;
     if (b.type === 'hr') {
       wr.ensure(14); wr.y -= 7;
       wr.ops.push(`0.7 0.7 0.7 RG 0.6 w ${num(M_LEFT)} ${num(wr.y)} m ${num(PAGE_W - M_RIGHT)} ${num(wr.y)} l S`);
@@ -223,7 +225,7 @@ export function createPdf({ title = 'Notiz', blocks = [], attName = () => 'Anhan
       const m = /^data:image\/jpe?g;base64,(.*)$/i.exec(b.src || '');
       const bytes = m ? base64ToBytes(m[1]) : null;
       const info = bytes && jpegInfo(bytes);
-      if (!info) { b.type = 'p'; b.runs = [{ text: '[Bild]', i: true }]; }
+      if (!info) b = { type: 'p', runs: [{ text: '[Bild]', i: true }], indent: 0 };
       else {
         let w = Math.min(CONTENT_W, info.width * 0.75), h = (w * info.height) / info.width;
         const maxH = PAGE_H - M_TOP - M_BOTTOM;
@@ -236,7 +238,7 @@ export function createPdf({ title = 'Notiz', blocks = [], attName = () => 'Anhan
         continue;
       }
     }
-    if (b.type === 'att') { b.type = 'p'; b.runs = [{ text: 'Anhang: ' + attName(b.id), i: true, color: [0.35, 0.35, 0.35] }]; }
+    if (b.type === 'att') b = { type: 'p', runs: [{ text: 'Anhang: ' + attName(b.id), i: true, color: [0.35, 0.35, 0.35] }], indent: 0 };
     const size = SIZES[b.type] || 11;
     const heading = /^h[123]$/.test(b.type);
     const indent = (b.indent || 0) * 16;

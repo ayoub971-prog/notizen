@@ -76,8 +76,19 @@ export function makeZip(entries) {
   return out;
 }
 
-/** Liest ein ZIP (nur unkomprimierte Eintraege, wie sie diese App schreibt). */
-export function readZip(bytes) {
+/** Entpackt "raw deflate" (ZIP-Methode 8) mit der eingebauten Browser-Funktion. */
+async function inflateRaw(data) {
+  if (typeof DecompressionStream === 'undefined') throw new Error('Dieser Browser kann komprimierte ZIP-Dateien nicht entpacken. Bitte die Original-Sicherung der App (unkomprimiert) verwenden.');
+  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/**
+ * Liest ein ZIP. Unterstuetzt unkomprimierte Eintraege (so schreibt diese App)
+ * und "Deflate" (so packen die meisten Programme, z. B. Datei-Manager neu).
+ * Gibt eine Liste { name, data: Uint8Array } zurueck (asynchron).
+ */
+export async function readZip(bytes) {
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let eocd = -1;
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
@@ -86,22 +97,29 @@ export function readZip(bytes) {
   if (eocd < 0) throw new Error('Keine gueltige ZIP-Datei');
   const count = v.getUint16(eocd + 10, true);
   let p = v.getUint32(eocd + 16, true);
+  if (count === 0xffff || p === 0xffffffff) throw new Error('Diese ZIP-Datei ist zu gross (ZIP64) und wird nicht unterstützt.');
   const dec = new TextDecoder();
   const files = [];
   for (let k = 0; k < count; k++) {
     if (v.getUint32(p, true) !== 0x02014b50) throw new Error('ZIP-Verzeichnis beschaedigt');
+    const flags = v.getUint16(p + 8, true);
     const method = v.getUint16(p + 10, true);
     const crc = v.getUint32(p + 16, true);
-    const size = v.getUint32(p + 20, true);
+    const csize = v.getUint32(p + 20, true), usize = v.getUint32(p + 24, true);
     const nameLen = v.getUint16(p + 28, true), extraLen = v.getUint16(p + 30, true), commentLen = v.getUint16(p + 32, true);
     const localOff = v.getUint32(p + 42, true);
     const name = dec.decode(bytes.subarray(p + 46, p + 46 + nameLen));
     p += 46 + nameLen + extraLen + commentLen;
+    if (name.endsWith('/')) continue; // Ordner-Eintrag
+    if (flags & 1) throw new Error(`«${name}» ist verschluesselt. Bitte eine ZIP-Datei ohne Passwort verwenden.`);
     const lNameLen = v.getUint16(localOff + 26, true), lExtra = v.getUint16(localOff + 28, true);
     const start = localOff + 30 + lNameLen + lExtra;
-    if (method !== 0) { files.push({ name, data: null, compressed: true }); continue; }
-    const data = bytes.subarray(start, start + size);
-    if (crc32(data) !== crc) throw new Error(`Pruefsumme falsch: ${name}`);
+    const raw = bytes.subarray(start, start + csize);
+    let data;
+    if (method === 0) data = raw;
+    else if (method === 8) data = await inflateRaw(raw);
+    else throw new Error(`«${name}» ist mit einem nicht unterstützten Verfahren gepackt (Methode ${method}). Bitte die Original-Sicherung der App oder eine normale ZIP-Datei verwenden.`);
+    if (data.length !== usize || crc32(data) !== crc) throw new Error(`Pruefsumme falsch: ${name} (Datei beschaedigt)`);
     files.push({ name, data });
   }
   return files;

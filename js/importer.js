@@ -3,7 +3,7 @@
 // - Original: Text/HTML wird bearbeitbar eingefuegt, Bilder inline,
 //   andere Dateien als Anhang.
 // - PDF: Inhalt wird sofort in ein PDF umgewandelt und als Anhang eingebettet.
-import { describeItems, pdfConvertible, parseCsv } from './sharetarget.js';
+import { describeItems, pdfConvertible, parseCsv, isHeic, HEIC_NOTE } from './sharetarget.js';
 import { escapeText, escapeAttr } from './htmlparse.js';
 import { sanitizeHtml } from './sanitize.js';
 import { htmlToBlocks, blocksToText, runsText } from './blocks.js';
@@ -46,6 +46,7 @@ export async function importItems(items, ctx) {
   if (!choice) return;
   if (choice === 'pdf') items = mergeTextForPdf(items);
   const notConvertible = [];
+  let heic = false;
   // HTML-Teile werden gesammelt und gemeinsam eingefuegt (sonst verschmilzt
   // Chrome aufeinanderfolgende Absaetze zu einer Zeile).
   let pending = '';
@@ -57,7 +58,7 @@ export async function importItems(items, ctx) {
     if (choice === 'original') await insertOriginal(it, buffered);
     else {
       const ok = await insertAsPdf(it, buffered);
-      if (!ok) { notConvertible.push(it.file?.name || 'Datei'); await insertOriginal(it, buffered); }
+      if (!ok) { notConvertible.push(it.file?.name || 'Datei'); if (it.file && isHeic(it.file.name, it.file.type)) heic = true; await insertOriginal(it, buffered); }
     }
   }
   if (pending) ctx.insertHtml(pending);
@@ -65,7 +66,8 @@ export async function importItems(items, ctx) {
     await infoDialog('Nicht als PDF möglich', [
       `«${notConvertible.join('», «')}» kann diese App ohne Internet nicht in ein PDF umwandeln (z. B. Word-, Excel- oder Videodateien).`,
       'Die Datei wurde deshalb im Original angehängt und bleibt vollständig erhalten.',
-      'Tipp: In der Original-App «Drucken → Als PDF speichern» wählen und das PDF hierher teilen.',
+      heic ? 'HEIC-Fotos kann Chrome auf diesem Gerät nicht lesen. Tipp: In den Einstellungen der Kamera-App das platzsparende HEIF-Format ausschalten – dann speichert sie JPEG.'
+        : 'Tipp: In der Original-App «Drucken → Als PDF speichern» wählen und das PDF hierher teilen.',
     ]);
   }
 }
@@ -86,12 +88,15 @@ async function insertOriginal(it, ctx) {
   const f = it.file;
   if (it.fileKind === 'image') {
     try { return ctx.insertHtml(`<p><img src="${await imageToJpeg(f)}" alt="${escapeAttr(f.name || 'Bild')}"></p><p><br></p>`); }
-    catch { /* nicht lesbar -> als Datei anhaengen */ }
+    catch {
+      // Browser kann das Bild nicht lesen (typisch: HEIC) -> Original als Anhang behalten
+      return ctx.addAttachment({ blob: f, name: f.name || 'Bild', type: f.type || 'image/heic', kind: 'image', text: '', note: isHeic(f.name, f.type) ? HEIC_NOTE : 'Bild: Vorschau nicht möglich' });
+    }
   }
   if (it.fileKind === 'text' && f.size < 2_000_000) return ctx.insertHtml(textToHtml(await f.text()));
   if (it.fileKind === 'csv' && f.size < 2_000_000) { const rows = parseCsv(await f.text()); if (rows.length) return ctx.insertHtml(csvToHtml(rows)); }
   const text = it.fileKind === 'text' || it.fileKind === 'csv' ? (await f.text()).slice(0, 200_000) : '';
-  return ctx.addAttachment({ blob: f, name: f.name || 'Datei', type: f.type || 'application/octet-stream', kind: it.fileKind === 'image' ? 'other' : it.fileKind, text });
+  return ctx.addAttachment({ blob: f, name: f.name || 'Datei', type: f.type || 'application/octet-stream', kind: it.fileKind, text });
 }
 
 async function insertAsPdf(it, ctx) {

@@ -45,7 +45,7 @@ export function planLayout(folders, notes, files) {
   for (const g of groups.values()) {
     const names = assignFileNames(g.notes);
     for (const n of g.notes) {
-      const nf = files.filter((f) => f.noteId === n.id);
+      const nf = files.filter((f) => f.noteId === n.id && String(n.html || '').includes(f.id)); // nur verwendete Anhaenge
       plan.set(n.id, { segs: g.segs.length ? g.segs : ['Notizen'], base: names.get(n.id), attNames: assignAttachmentNames(nf), files: nf });
     }
   }
@@ -202,9 +202,9 @@ export function backupFileName(d = new Date()) {
 
 /** Liest eine ZIP-Sicherung. Rueckgabe: { folders, notes, files (mit blob) } */
 export async function readBackupZip(file) {
-  const entries = readZip(new Uint8Array(await file.arrayBuffer()));
+  const entries = await readZip(new Uint8Array(await file.arrayBuffer()));
   const json = entries.find((e) => e.name === '_wiederherstellung/backup.json');
-  if (!json || !json.data) throw new Error('Diese ZIP-Datei ist keine Notizen-Sicherung.');
+  if (!json || !json.data) throw new Error('Diese ZIP-Datei ist keine Notizen-Sicherung (die Datei _wiederherstellung/backup.json fehlt).');
   const backup = JSON.parse(new TextDecoder().decode(json.data));
   if (backup.app !== 'Notizen') throw new Error('Unbekanntes Sicherungsformat.');
   const byName = new Map(entries.map((e) => [e.name, e]));

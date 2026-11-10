@@ -107,13 +107,41 @@ Listen und Checklisten, **Tabellen mit Linien** (Kopfzeile wird auf jeder Seite 
 Seitenzahlen. Zeichen ausserhalb von Westeuropa (z. B. Emojis, Arabisch, Chinesisch) erscheinen im PDF als «?».
 Für perfekte Optik gibt es zusätzlich «Drucken / als PDF sichern» (Druckdialog von Chrome).
 
+## Version 2 (November 2026)
+
+Verbesserungen nach dem Prüfbericht:
+
+1. **Suchtreffer sichtbar markieren** – Öffnet man eine Notiz aus der Suche, werden die Treffer gelb markiert
+   (im Dunkelmodus dunkelgelb mit weisser Schrift). Die Markierung nutzt dieselben Regeln wie die Suche:
+   «strasse zurich» markiert «Straße» und «Zürich» – und zwar genau das ganze Wort, auch bei ß und Umlauten.
+2. **HEIC/HEIF-Fotos** – werden als Bild erkannt. Kann der Browser sie nicht anzeigen, stürzt nichts ab:
+   das Foto bleibt als Anhang mit dem Hinweis «HEIC-Bild: Vorschau nicht möglich» erhalten (Öffnen/Teilen/Herunterladen geht).
+3. **ZIP-Wiederherstellung** – liest jetzt auch ZIPs, die mit einem anderen Programm neu gepackt wurden
+   (Deflate-Komprimierung, z. B. Windows «Komprimieren» oder Samsung «Eigene Dateien»). Andere Verfahren
+   werden mit verständlicher Meldung abgelehnt; beschädigte Dateien werden über die Prüfsumme erkannt.
+4. **PDF-Export** verändert die Notizdaten nicht mehr (zweimal exportieren ergibt dasselbe PDF; Test vorhanden).
+5. **Hinweise (Toasts)** erscheinen unten über der Werkzeugleiste (berücksichtigt Bildschirmrand und Tastatur),
+   verdecken den Titel nicht mehr und verschwinden schneller (1,8 s).
+6. **Tabellen-Werkzeuge** passen auf schmale Handys (412 px und 360 px getestet): vier Knöpfe in einer Reihe,
+   «Tabelle löschen» darunter über die ganze Breite.
+7. **Rückgängig** funktioniert jetzt auch für Checklisten-Haken, Tabelle einfügen, Zeile/Spalte hinzufügen oder
+   löschen, Tabelle löschen und «Anhang entfernen».
+
+Ausserdem: Bilder und Anhänge landen nie mehr im Titel, wenn eine Notiz frisch aus der Suche geöffnet wurde;
+die Tabellen-Leiste der vorherigen Notiz verschwindet beim Wechsel; ZIP-Sicherungen enthalten nur noch Anhänge,
+die in der Notiz wirklich vorkommen. Neue Tests: Treffer-Positionen, HEIC, Deflate (mit Python neu gepackt),
+PDF ohne Nebenwirkung, Rückgängig, Tabellen-Leiste bei 360/412 px, Toast-Position.
+
+Nach dem Hochladen lädt die installierte App die neue Version beim nächsten Start (Cache `notizen-v2`).
+Daten bleiben erhalten – an der Datenbank hat sich nichts geändert.
+
 ---
 
 ## Technik
 
 - Reines HTML/CSS/JavaScript (ES-Module), **kein Build-Schritt, keine Abhängigkeiten, kein CDN**.
 - Strenge Content-Security-Policy (`default-src 'self'`; Bilder/Audio nur `self`, `data:`, `blob:`).
-- Offline per Service Worker (`sw.js`, Cache `notizen-v1`).
+- Offline per Service Worker (`sw.js`, Cache `notizen-v2`).
 
 ```
 index.html            Oberfläche (3 Bereiche: Ordner, Notizen, Editor)
@@ -142,14 +170,15 @@ tests/                Unit-Tests (node) + Browser-Test (headless Chrome)
 
 ### Tests
 ```
-node --test tests/*.test.mjs        # Unit-Tests: Suche, Bereinigung, PDF (inkl. pdftotext), ZIP, Ordner, Teilen
+node --test tests/*.test.mjs        # Unit-Tests: Suche/Treffer, Bereinigung, PDF (inkl. pdftotext), ZIP inkl. Deflate, Ordner, Teilen, HEIC
 node tests/browser-smoke.mjs        # optional: echter Chrome (headless), Screenshots in /tmp/notizen-shots
 python3 -m http.server 8080         # lokal starten, dann http://localhost:8080
 ```
 
 ### Neue Version veröffentlichen
 1. Änderungen machen.
-2. In `sw.js` `VERSION` erhöhen (z. B. `'2'`) und dort sowie in `index.html` / `manifest.webmanifest` `?v=1` → `?v=2`.
+2. In `sw.js` `VERSION` erhöhen (aktuell `'2'`, nächste `'3'`) und dort sowie in `index.html` / `manifest.webmanifest` `?v=2` → `?v=3`.
+   Ausserdem `APP_VERSION` in `js/app.js` und die Erwartungen in `tests/static.test.mjs` / `tests/browser-smoke.mjs` anpassen.
 3. Alle Dateien gemeinsam hochladen (z. B. GitHub Pages). Die App lädt die neue Version beim nächsten Start.
 
 ### Hinweise für die Weiterentwicklung (z. B. mit Gemini oder ChatGPT)
@@ -165,7 +194,14 @@ python3 -m http.server 8080         # lokal starten, dann http://localhost:8080
 - Sprachmemos werden als `.webm` (Opus) gespeichert; manche Apps (z. B. WhatsApp) spielen `.webm` evtl. nicht direkt ab.
 - Einfügen über die Gboard-Zwischenablage-Leiste kann als normales Tippen ankommen – dann erscheint keine Abfrage.
   Über «Einfügen» im Text-Menü (langes Drücken) erscheint sie.
-- «Rückgängig» deckt Text und Formatierung ab; Tabellen-Umbau und Anhänge sind teilweise nicht rückgängig zu machen.
+- «Rückgängig»: Text und Formatierung über den Browser; Checklisten-Haken, Tabelle einfügen/umbauen/löschen und
+  «Anhang entfernen» über einen eigenen Verlauf (50 Schritte, nur für die gerade offene Notiz). Wird beides wild
+  gemischt (tippen, Haken, tippen …), kann die Reihenfolge in Einzelfällen abweichen. Eingefügte Anhänge/Bilder
+  selbst werden über den Browser-Verlauf zurückgenommen.
+- HEIC/HEIF-Fotos (Samsung «Hocheffizient»-Einstellung) kann Chrome ohne Internet meist nicht anzeigen; sie werden
+  unverändert als Anhang gespeichert («HEIC-Bild: Vorschau nicht möglich»), aber nicht umgewandelt und nicht ins PDF übernommen.
+- ZIP-Wiederherstellung liest «gespeichert» und «Deflate» (Standard aller ZIP-Programme); andere Verfahren
+  (z. B. bzip2, 7z-LZMA), verschlüsselte ZIPs und ZIP64 (> 4 GB) werden mit klarer Meldung abgelehnt.
 - Sehr grosse Sicherungen (> 1–2 GB) können beim ZIP-Erstellen zu viel Arbeitsspeicher brauchen.
 
 Lizenz: MIT (eigener Code). Zeichenbreiten der PDF-Standardschrift stammen aus den freien URW-Metriken (reine Zahlenwerte).

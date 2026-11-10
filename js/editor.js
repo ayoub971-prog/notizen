@@ -6,9 +6,53 @@ import { sanitizeHtml } from './sanitize.js';
 
 let editorEl = null;
 let savedRange = null;
+let onRestore = () => {};
 
-export function initEditor(el) {
+// ---------- Eigener Rueckgaengig-Stapel ----------
+// Abhaken und Tabellen-Umbau aendern das DOM direkt per JavaScript; das kennt
+// der Browser-Undo nicht. Darum: vor solchen Aktionen einen Schnappschuss
+// merken ({ html: vorher, after: nachher }). "Rueckgaengig" stellt den
+// Schnappschuss her, sobald der Editor wieder genau im Zustand "nachher" ist;
+// sonst wird zuerst der normale Browser-Undo (Tippen, Formatieren) benutzt.
+let undoStack = [];
+const UNDO_MAX = 50;
+
+/** Fuehrt fn als rueckgaengig-machbare Aktion aus. */
+export function customOp(fn) {
+  const before = serializeEditor();
+  const result = fn();
+  const after = serializeEditor();
+  if (before !== after) {
+    undoStack.push({ html: before, after });
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+  }
+  return result;
+}
+
+export function resetUndo() { undoStack = []; }
+
+function restoreSnapshot(html) {
+  editorEl.innerHTML = html;
+  forgetSelection();
+  onRestore();
+  editorEl.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** Rueckgaengig: eigener Stapel + Browser-Undo kombiniert. Gibt true zurueck, wenn etwas geaendert wurde. */
+export function undo() {
+  const cur = serializeEditor();
+  const top = undoStack[undoStack.length - 1];
+  if (top && cur === top.after) { undoStack.pop(); restoreSnapshot(top.html); return true; }
+  restoreSelection();
+  document.execCommand('undo');
+  if (serializeEditor() !== cur) { editorEl.dispatchEvent(new Event('input', { bubbles: true })); return true; }
+  if (top) { undoStack.pop(); restoreSnapshot(top.html); return true; }
+  return false;
+}
+
+export function initEditor(el, opts = {}) {
   editorEl = el;
+  if (opts.onRestore) onRestore = opts.onRestore;
   document.execCommand('defaultParagraphSeparator', false, 'p');
   document.addEventListener('selectionchange', () => {
     const sel = document.getSelection();
@@ -97,14 +141,36 @@ export function handleChecklistClick(e) {
   const rect = li.getBoundingClientRect();
   if (e.clientX - rect.left > 34) return false;
   e.preventDefault();
-  if (li.getAttribute('data-checked') === 'true') li.removeAttribute('data-checked'); else li.setAttribute('data-checked', 'true');
+  customOp(() => { if (li.getAttribute('data-checked') === 'true') li.removeAttribute('data-checked'); else li.setAttribute('data-checked', 'true'); });
   editorEl.dispatchEvent(new Event('input', { bubbles: true }));
   return true;
 }
 
 /** Fuegt HTML an der Cursorposition ein (bereinigt). */
-export function insertHtml(html, { clean = true } = {}) {
+/** Vergisst die alte Cursorposition (z. B. beim Oeffnen einer anderen Notiz),
+ *  damit nichts versehentlich am Anfang/im Titel eingefuegt wird. */
+export function forgetSelection() {
+  savedRange = null;
+  const sel = document.getSelection();
+  if (sel.rangeCount && editorEl.contains(sel.anchorNode)) sel.removeAllRanges();
+}
+
+/** Steht der Cursor in einer Ueberschrift, wird er in eine (neue) leere Zeile
+ *  danach gesetzt – Bilder/Anhaenge landen so nie im Titel. */
+function caretOutOfHeading() {
+  const h = closest('h1,h2,h3');
+  if (!h) return;
+  let p = h.nextElementSibling;
+  if (!(p && p.tagName === 'P' && !p.textContent.trim() && !p.querySelector('img,.att'))) {
+    p = document.createElement('p'); p.append(document.createElement('br')); h.after(p);
+  }
+  const r = document.createRange(); r.selectNodeContents(p); r.collapse(true);
+  const sel = document.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+}
+
+export function insertHtml(html, { clean = true, block = false } = {}) {
   restoreSelection();
+  if (block) caretOutOfHeading();
   const safe = clean ? sanitizeHtml(html) : html;
   const ok = document.execCommand('insertHTML', false, safe);
   if (!ok) {
@@ -121,8 +187,12 @@ export function insertHtml(html, { clean = true } = {}) {
 
 // ---------- Tabellen ----------
 export function insertTable(rows = 3, cols = 3) {
-  // Bewusst ohne insertHTML: Chrome zerlegt Tabellen innerhalb von <p> sonst.
   restoreSelection();
+  customOp(() => insertTableRaw(rows, cols));
+}
+
+function insertTableRaw(rows, cols) {
+  // Bewusst ohne insertHTML: Chrome zerlegt Tabellen innerhalb von <p> sonst.
   const table = document.createElement('table');
   table.className = 'note-table';
   const tbody = document.createElement('tbody');
@@ -158,6 +228,11 @@ export function currentCell() { return closest('td,th'); }
 /** Tabellen-Aktionen: addRow, addCol, delRow, delCol, delTable */
 export function tableAction(action) {
   restoreSelection();
+  if (!currentCell()) return false;
+  return customOp(() => tableActionRaw(action));
+}
+
+function tableActionRaw(action) {
   const cell = currentCell();
   if (!cell) return false;
   const row = cell.parentElement, table = cell.closest('table');

@@ -11,18 +11,18 @@
 import * as db from './db.js';
 import { $, el, toast, dialog, confirmDialog, promptDialog, infoDialog, formatDate, formatSize } from './ui.js';
 import { flattenTree, pathOf, descendantIds, canMoveFolder, planDeleteFolder, validateFolderName } from './tree.js';
-import { buildIndex, search, snippet } from './search.js';
+import { buildIndex, search, snippet, findMatches } from './search.js';
 import { htmlToBlocks, blocksToText, runsText } from './blocks.js';
 import { sanitizeHtml } from './sanitize.js';
 import * as ed from './editor.js';
 import { importItems } from './importer.js';
-import { parseShared } from './sharetarget.js';
+import { parseShared, isHeic, HEIC_NOTE } from './sharetarget.js';
 import { imageToJpeg, startRecording, recordingSupported, audioExt } from './media.js';
 import * as backup from './backup.js';
 import { shareFiles, shareText, notePdf, noteText, printNote, download } from './share.js';
 import { escapeText, escapeAttr } from './htmlparse.js';
 
-export const APP_VERSION = '1';
+export const APP_VERSION = '2';
 const DEFAULT_FOLDER = 'f-default';
 const TRASH_DAYS = 30;
 const REMIND_DAYS = 7;
@@ -162,7 +162,10 @@ function renderNotes() {
 
 // ================= Suche =================
 function ensureIndex() {
-  if (!S.index) S.index = buildIndex({ folders: S.folders, notes: S.notes, files: [...S.files.values()], folderPath: folderPathStr });
+  if (!S.index) {
+    const used = (f) => String(noteById(f.noteId)?.html || '').includes(f.id); // entfernte Anhaenge nicht mehr finden
+    S.index = buildIndex({ folders: S.folders, notes: S.notes, files: [...S.files.values()].filter(used), folderPath: folderPathStr });
+  }
   return S.index;
 }
 function markText(container, text, q) {
@@ -195,25 +198,24 @@ for (const [inp, list, other] of [['#search-folders', '#search-results-folders',
   $(inp).addEventListener('input', (e) => renderResults($(list), $(other), e.target.value));
 }
 
+/** Markiert Suchtreffer in der geoeffneten Notiz – mit derselben Normalisierung
+ *  wie die Suche (gross/klein, Akzente, ß = ss). Positionen werden auf den
+ *  Originaltext zurueckgerechnet (findMatches in search.js). */
 function highlightInEditor(q) {
   if (!window.CSS?.highlights || !q) return;
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const ranges = [];
   const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
   let first = null;
-  while (walker.nextNode()) {
-    const node = walker.currentNode, low = node.data.toLowerCase();
-    for (const w of words) {
-      let i = low.indexOf(w);
-      while (i >= 0 && ranges.length < 200) {
-        const r = new Range(); r.setStart(node, i); r.setEnd(node, i + w.length); ranges.push(r);
-        first ||= node.parentElement;
-        i = low.indexOf(w, i + w.length);
-      }
+  while (walker.nextNode() && ranges.length < 300) {
+    const node = walker.currentNode;
+    for (const m of findMatches(node.data, q)) {
+      const r = new Range(); r.setStart(node, m.start); r.setEnd(node, m.end); ranges.push(r);
+      first ||= node.parentElement;
     }
   }
   CSS.highlights.set('treffer', new Highlight(...ranges));
   first?.scrollIntoView({ block: 'center' });
+  return ranges.length;
 }
 
 // ================= Editor =================
@@ -229,13 +231,16 @@ async function openNote(id, { focus = false, highlight = '', att = null } = {}) 
   const n = noteById(id);
   if (!n) return;
   S.noteId = id;
+  ed.resetUndo();
   editor.innerHTML = sanitizeHtml(n.html || '') || '<h1><br></h1>';
+  ed.forgetSelection();
   hydrate();
   const trashed = !!n.deleted;
   editor.contentEditable = trashed ? 'false' : 'true';
   $('#trash-banner').hidden = !trashed;
   $('#editor-tools').hidden = trashed;
   $('#format-panel').hidden = true;
+  $('#table-tools').hidden = true;
   $('#note-date').textContent = noteDateText(n);
   setStatus('');
   app.classList.add('has-note');
@@ -338,6 +343,7 @@ function hydrate(root = editor) {
     if (f.duration) info.push(`${Math.floor(f.duration / 60)}:${String(Math.round(f.duration % 60)).padStart(2, '0')} min`);
     info.push(new Date(f.created).toLocaleDateString('de-CH'));
     if (f.fromApp) info.push('PDF erstellt von Notizen');
+    if (f.note) info.push(f.note);
     card.append(el('div', { class: 'att-head' }, icon, el('div', { class: 'att-meta' }, el('div', { class: 'att-name' }, f.name), el('div', { class: 'att-info' }, info.join(' · ')))));
     if (kind === 'pdf' && (f.preview || f.text)) {
       const pv = el('div', { class: 'att-preview' });
@@ -356,11 +362,11 @@ function hydrate(root = editor) {
   }
 }
 
-async function addAttachment({ blob, name, type, kind, text = '', preview = null, fromApp = false, duration = 0 }) {
-  const f = { id: db.newId('a-'), noteId: S.noteId, name, type, size: blob.size, kind, blob, text, preview, fromApp, duration, created: Date.now() };
+async function addAttachment({ blob, name, type, kind, text = '', preview = null, fromApp = false, duration = 0, note = '' }) {
+  const f = { id: db.newId('a-'), noteId: S.noteId, name, type, size: blob.size, kind, blob, text, preview, fromApp, duration, note, created: Date.now() };
   await db.put('files', f);
   S.files.set(f.id, f);
-  ed.insertHtml(`<div class="att" data-att="${f.id}" contenteditable="false">Anhang</div><p><br></p>`, { clean: false });
+  ed.insertHtml(`<div class="att" data-att="${f.id}" contenteditable="false">Anhang</div><p><br></p>`, { clean: false, block: true });
   hydrate();
   S.index = null;
   return f;
@@ -370,8 +376,9 @@ async function attachmentAction(act, card) {
   const f = S.files.get(card.dataset.att);
   if (act === 'remove') {
     if (!(await confirmDialog('Anhang entfernen?', f ? `«${f.name}» wird aus der Notiz gelöscht.` : '', 'Entfernen', true))) return;
-    card.remove();
-    if (f) { await db.del('files', f.id); S.files.delete(f.id); }
+    ed.customOp(() => card.remove());
+    // Datei bleibt bis zum naechsten Start in der Datenbank (Rueckgaengig moeglich);
+    // nicht mehr verwendete Anhaenge raeumt housekeeping() spaeter auf.
     editor.dispatchEvent(new Event('input'));
     return;
   }
@@ -382,7 +389,7 @@ async function attachmentAction(act, card) {
   if (act === 'open') {
     const url = URL.createObjectURL(file); S.urls.push(url);
     const a = el('a', { href: url, target: '_blank', rel: 'noopener' });
-    if (f.kind !== 'pdf' && !/^(image|text)\//.test(f.type)) a.download = f.name;
+    if (f.kind !== 'pdf' && (f.note || !/^(image|text)\//.test(f.type))) a.download = f.name; // nicht anzeigbar -> herunterladen
     document.body.append(a); a.click(); a.remove();
   }
 }
@@ -441,7 +448,7 @@ $('#colors').append(el('button', { type: 'button', 'data-clear': '1', 'aria-labe
 $('#colors').querySelectorAll('button').forEach(keepFocus);
 $('#tb-check').onclick = () => ed.format('checklist');
 $('#tb-table').onclick = () => ed.insertTable(3, 3);
-$('#tb-undo').onclick = () => ed.format('undo');
+$('#tb-undo').onclick = () => { if (!ed.undo()) toast('Nichts rückgängig zu machen.'); };
 $('#table-tools').addEventListener('click', async (e) => {
   const a = e.target.closest('button')?.dataset.table;
   if (!a) return;
@@ -476,8 +483,12 @@ for (const id of ['gallery', 'camera', 'scan']) {
     for (const f of files) {
       try {
         const src = await imageToJpeg(f, id === 'scan' ? { max: 2200, quality: 0.85, scan: true } : { max: 1600, quality: 0.85 });
-        ed.insertHtml(`<p><img src="${src}" alt="${escapeAttr(id === 'scan' ? 'Scan' : 'Foto')}"></p><p><br></p>`, { clean: false });
-      } catch (err) { toast('Bild konnte nicht gelesen werden: ' + (err.message || err)); }
+        ed.insertHtml(`<p><img src="${src}" alt="${escapeAttr(id === 'scan' ? 'Scan' : 'Foto')}"></p><p><br></p>`, { clean: false, block: true });
+      } catch (err) {
+        // z. B. HEIC: Chrome kann es nicht lesen -> Original als Anhang behalten, nichts geht verloren
+        await addAttachment({ blob: f, name: f.name || 'Bild', type: f.type || 'image/heic', kind: 'image', note: isHeic(f.name, f.type) ? HEIC_NOTE : 'Bild: Vorschau nicht möglich' });
+        toast(isHeic(f.name, f.type) ? 'HEIC-Bild als Anhang gespeichert (keine Vorschau).' : 'Bild als Anhang gespeichert (keine Vorschau).');
+      }
     }
   });
 }
@@ -820,7 +831,7 @@ async function handleSharedInbox() {
 
 // ================= Start =================
 async function start() {
-  ed.initEditor(editor);
+  ed.initEditor(editor, { onRestore: () => hydrate() });
   try { S.collapsed = new Set(JSON.parse(localStorage.getItem('collapsed') || '[]')); } catch {}
   await loadAll();
   await housekeeping();
@@ -841,4 +852,4 @@ async function start() {
 start().catch((e) => { console.error(e); infoDialog('Start fehlgeschlagen', String(e.message || e)); });
 
 // Fuer automatische Tests im Browser
-window.__notizen = { S, saveNow, newNote, openNote, closeEditor, openFolder, importItems: (items) => importItems(items, importCtx), parseShared, makeZip, backup, ed };
+window.__notizen = { S, highlightInEditor, saveNow, newNote, openNote, closeEditor, openFolder, importItems: (items) => importItems(items, importCtx), parseShared, makeZip, backup, ed };

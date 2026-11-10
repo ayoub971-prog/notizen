@@ -35,14 +35,13 @@ export async function imageToJpeg(blob, { max = 1600, quality = 0.85, scan = fal
 
 export async function dataUrlToBlob(url) { return (await fetch(url)).blob(); }
 
-/** Wandelt alle Nicht-JPEG-Bilder in den Bloecken zu JPEG (der PDF-Generator kann nur JPEG). */
+/** Wandelt alle Nicht-JPEG-Bilder zu JPEG (der PDF-Generator kann nur JPEG).
+ *  Gibt eine NEUE Liste zurueck; die Eingabe bleibt unveraendert. */
 export async function jpegifyBlocks(blocks) {
-  for (const b of blocks) {
-    if (b.type === 'img' && !/^data:image\/jpe?g/i.test(b.src)) {
-      try { b.src = await imageToJpeg(await dataUrlToBlob(b.src), { max: 2000, quality: 0.9 }); } catch { /* bleibt Platzhalter */ }
-    }
-  }
-  return blocks;
+  return Promise.all(blocks.map(async (b) => {
+    if (b.type !== 'img' || /^data:image\/jpe?g/i.test(b.src)) return b;
+    try { return { ...b, src: await imageToJpeg(await dataUrlToBlob(b.src), { max: 2000, quality: 0.9 }) }; } catch { return b; /* bleibt Platzhalter */ }
+  }));
 }
 
 export function blobToDataUrl(blob) {
