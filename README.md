@@ -205,3 +205,7 @@ python3 -m http.server 8080         # lokal starten, dann http://localhost:8080
 - Sehr grosse Sicherungen (> 1–2 GB) können beim ZIP-Erstellen zu viel Arbeitsspeicher brauchen.
 
 Lizenz: MIT (eigener Code). Zeichenbreiten der PDF-Standardschrift stammen aus den freien URW-Metriken (reine Zahlenwerte).
+
+## Version 3
+- Handy-Layout korrigiert: Die dreispaltige Ansicht erscheint nur noch, wenn der Bildschirm wirklich mindestens 900 CSS-Pixel breit ist (`Math.min(innerWidth, screen.width) >= 900`, Klasse `html.wide` in `js/app.js`). Vorher sah ein Handy mit Chrome-«Desktop-Website» oder in der Link-Vorschau einer App drei winzige, abgeschnittene Spalten.
+- Neuer Browser-Test «Handy im Desktop-Modus».

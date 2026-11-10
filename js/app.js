@@ -22,7 +22,7 @@ import * as backup from './backup.js';
 import { shareFiles, shareText, notePdf, noteText, printNote, download } from './share.js';
 import { escapeText, escapeAttr } from './htmlparse.js';
 
-export const APP_VERSION = '2';
+export const APP_VERSION = '3';
 const DEFAULT_FOLDER = 'f-default';
 const TRASH_DAYS = 30;
 const REMIND_DAYS = 7;
@@ -310,9 +310,16 @@ async function saveNow() {
   }
   $('#note-date').textContent = noteDateText(n);
   S.index = null;
-  if (matchMedia('(min-width: 900px)').matches) renderNotes();
+  if (isWide()) renderNotes();
   scheduleSync([n.id]);
 }
+
+/** Drei Spalten nur auf echt breiten Geraeten. Handys melden screen.width ~ 400 CSS-Pixel,
+ *  auch wenn Chrome die Seite als «Desktop-Website» mit 980 px Breite darstellt. */
+function isWide() { return Math.min(window.innerWidth, screen.width) >= 900; }
+function applyLayoutMode() { document.documentElement.classList.toggle('wide', isWide()); }
+applyLayoutMode();
+addEventListener('resize', applyLayoutMode);
 
 async function newNote(title = '') {
   if (S.noteId) await closeEditor();

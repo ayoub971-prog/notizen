@@ -76,10 +76,10 @@ async function main() {
   await waitFor('window.__notizen && document.querySelector("#folder-list li")', 8000);
 
   await step('Start: Ordnerliste mit Hauptordner, SW aktiv, Manifest erreichbar', async () => {
-    const r = await evaluate(`const m = await (await fetch('manifest.webmanifest?v=2')).json();
+    const r = await evaluate(`const m = await (await fetch('manifest.webmanifest?v=3')).json();
       return { rows: document.querySelectorAll('#folder-list li').length, name: m.name, share: m.share_target.action, sw: !!navigator.serviceWorker.controller,
         caches: await caches.keys() }`);
-    assert.equal(r.rows, 3); assert.equal(r.name, 'Notizen'); assert.equal(r.sw, true); assert.deepEqual(r.caches, ['notizen-v2']);
+    assert.equal(r.rows, 3); assert.equal(r.name, 'Notizen'); assert.equal(r.sw, true); assert.deepEqual(r.caches, ['notizen-v3']);
     await shot('01-ordner');
   });
 
@@ -473,11 +473,19 @@ d.close()`, src, dst]);
   });
 
   await step('Breite Ansicht (Tablet/Desktop): drei Spalten', async () => {
-    await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false, screenWidth: 1280, screenHeight: 800 });
     await sleep(300);
     await shot('11-breit');
     const vis = await evaluate(`return ['#pane-folders', '#pane-notes', '#pane-editor'].map(s => getComputedStyle(document.querySelector(s)).display)`);
     assert.deepEqual(vis.slice(0, 2), ['flex', 'flex']);
+  });
+
+  await step('Handy im Desktop-Modus (980 px Seite, 412 px Bildschirm): nur eine Spalte', async () => {
+    await send('Emulation.setDeviceMetricsOverride', { width: 980, height: 2000, deviceScaleFactor: 1, mobile: true, screenWidth: 412, screenHeight: 915 });
+    await sleep(300);
+    await shot('v3-desktopmodus');
+    const r = await evaluate(`return { wide: document.documentElement.classList.contains('wide'), vis: ['#pane-folders', '#pane-notes', '#pane-editor'].map(s => getComputedStyle(document.querySelector(s)).display).filter(d => d !== 'none').length }`);
+    assert.equal(r.wide, false); assert.equal(r.vis, 1);
   });
 
   await step('Dunkelmodus', async () => {

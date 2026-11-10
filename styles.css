@@ -23,15 +23,14 @@ svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width:
 .empty-pane { display: none !important; }
 
 /* Breite Bildschirme (Tablet quer, Desktop): drei Spalten wie bei einer Notiz-App ueblich */
-@media (min-width: 900px) {
-  #app { grid-template-columns: 270px 340px minmax(0, 1fr); }
-  .pane { display: flex; border-right: 1px solid var(--line); }
-  #pane-editor { background: var(--paper); }
-  #app:not(.has-note) #pane-editor { display: none; }
-  #app:not(.has-note) .empty-pane { display: flex !important; align-items: center; justify-content: center; color: var(--muted); }
-  .back { visibility: hidden; }
-  #pane-folders .folder-row.active, .note-row.active { background: var(--accent-soft); }
-}
+/* Klasse .wide setzt app.js nur bei echt breitem Bildschirm (screen.width >= 900); Handys im Desktop-Modus bleiben einspaltig */
+html.wide #app { grid-template-columns: 270px 340px minmax(0, 1fr); }
+html.wide .pane { display: flex; border-right: 1px solid var(--line); }
+html.wide #pane-editor { background: var(--paper); }
+html.wide #app:not(.has-note) #pane-editor { display: none; }
+html.wide #app:not(.has-note) .empty-pane { display: flex !important; align-items: center; justify-content: center; color: var(--muted); }
+html.wide .back { visibility: hidden; }
+html.wide #pane-folders .folder-row.active,html.wide .note-row.active { background: var(--accent-soft); }
 
 .bar { display: flex; align-items: center; gap: 4px; padding: max(8px, env(safe-area-inset-top)) 8px 4px; min-height: 52px; }
 .big-title { font-size: 32px; font-weight: 700; margin: 2px 16px 6px; letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

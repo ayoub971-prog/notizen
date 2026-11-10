@@ -30,7 +30,7 @@ test('Service Worker cached alle Dateien, Cache-Name versioniert', () => {
 test('index.html: CSP, Manifest, versionierte Skripte', () => {
   const html = read('index.html');
   assert.match(html, /Content-Security-Policy" content="default-src 'self'; script-src 'self';/);
-  assert.match(html, /js\/app\.js\?v=2/);
+  assert.match(html, /js\/app\.js\?v=3/);
   assert.match(html, /lang="de-CH"/);
   assert.doesNotMatch(html, /<script(?![^>]*type="module" src=)/); // keine Inline-Skripte
 });

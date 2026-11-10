@@ -1,12 +1,12 @@
 // Service Worker: macht die App offline nutzbar und nimmt Inhalte aus dem
 // Android-Teilen-Menue entgegen (Web Share Target, siehe manifest.webmanifest).
 // Bei jeder neuen Version: VERSION erhoehen UND ?v=... in index.html/ASSETS anpassen.
-const VERSION = '2';
+const VERSION = '3';
 const CACHE = 'notizen-v' + VERSION;
 const ASSETS = [
-  './', './index.html', './styles.css?v=2', './manifest.webmanifest?v=2',
-  './icons/icon.svg?v=2', './icons/icon-192.png?v=2', './icons/icon-512.png?v=2', './icons/icon-maskable-512.png',
-  './js/app.js?v=2', './js/db.js', './js/ui.js', './js/tree.js', './js/search.js', './js/blocks.js', './js/htmlparse.js',
+  './', './index.html', './styles.css?v=3', './manifest.webmanifest?v=3',
+  './icons/icon.svg?v=3', './icons/icon-192.png?v=3', './icons/icon-512.png?v=3', './icons/icon-maskable-512.png',
+  './js/app.js?v=3', './js/db.js', './js/ui.js', './js/tree.js', './js/search.js', './js/blocks.js', './js/htmlparse.js',
   './js/sanitize.js', './js/editor.js', './js/importer.js', './js/sharetarget.js', './js/media.js', './js/backup.js',
   './js/share.js', './js/pdf.js', './js/pdf-metrics.js', './js/zip.js', './js/exportfmt.js',
 ];
